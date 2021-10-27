@@ -11,7 +11,7 @@
         apiTimeout: 25,
 
         // h - this scale seems to fit the map better but needs to check further
-        convertMetersToFeet: 2.407454667562122//3.28084
+        convertMetersToFeet: 3.28084 //2.407454667562122//
     }
 
     /**
@@ -37,7 +37,7 @@
     const create3DContext = async () => {
         try {
             // Undo the last history map
-            undoLastHistory()
+            //undoLastHistory()
 
             // Create an object of all the HTML <input> values
             const inputs = {                
@@ -45,8 +45,6 @@
                 longitude: getInputNumberById("Longitude"),
                 radius: getInputNumberById("Radius")
             }
-
-         
 
             // https://www.openstreetmap.org/#map=17/51.50111/-0.12531
             const locationGeoPoint = turf.point([ inputs.latitude, inputs.longitude ])
@@ -60,7 +58,9 @@
             // Convert the OpenStreetMaps data to GeoJSON
             const geoJsonData = osmtogeojson(osmData)
 
-            const geoFeatures = geoJsonData.features.filter(feature => feature.geometry.type === "Polygon")
+            const geoFeatures = geoJsonData.features.filter(feature => feature.geometry.type === "Polygon" )
+            //console.log(geoFeatures)
+            
 
             // const locationProjected = turf.toMercator(locationGeoPoint)
 
@@ -148,7 +148,7 @@
             if(!_.isUndefined(feature.properties["building:levels"]))
                 height = feature.properties["building:levels"] * storeyHeight
 
-            // h - better to let undetermined height obj remain flat or taking standard storeyheight?
+            // h - else statement get rid of extrusion error
             else 
                 height = storeyHeight
 
@@ -160,44 +160,80 @@
                     const xInternal = convertMetersToFormItUnits(x)
                     const yInternal = convertMetersToFormItUnits(y)
                     const zInternal = 0
+
+                   
                     return WSM.Geom.Point3d(xInternal, yInternal, zInternal)
                 }))
             })
 
-            return Promise.all(polygonsFormIt.map(async points => {
+            const historyID = _.last(state.history)
+            const heightInternal = convertMetersToFormItUnits(height)
+
+            // the first item in the array is usually outer boundary
+            await Promise.all(polygonsFormIt.map(async (points, index) => {                
                 try {
-                    const historyID = _.last(state.history)
-
-                    // Create polylines
-                    WSM.APICreatePolyline(historyID, await points, false)
-
-                    const heightInternal = convertMetersToFormItUnits(height)
-
-                    // h - add functions to determine points clock/anticlock wise direction
-                    //--
-
-                    // h - group function
+                   
                     const groupID = await WSM.APICreateGroup(historyID,[])
-                    //logMessage('1. create new group')
              
-                    const groupHistoryID = await WSM.APIGetGroupReferencedHistoryReadOnly(historyID,groupID)
-                    //logMessage('2. create new group history ID')
+                    const groupHistoryID = await WSM.APIGetGroupReferencedHistoryReadOnly(historyID , groupID)
+                 
+                        
+                    const allPts = await points
 
-                    // create extrusion under the group history ID
-                    WSM.APICreateExtrusion(groupHistoryID, await points, heightInternal)                 
+                    const allPL = []
 
+                    for(let i=0;i< allPts.length;i++)
+                    {
+                        let k = (i + 1 +  allPts.length) %  allPts.length 
+                        const pl = WSM.APIConnectPoint3ds(historyID, allPts[i],  allPts[k])
+                        //allPL.push(pl)                        
+                    }
 
+                    //const result = await Promise.all(allPL)
+                    //console.log(result)
+
+                    const faces= await WSM.APIGetAllObjectsByTypeReadOnly(0, WSM.nObjectType.nFaceType);
+                    const aface = faces[0];
+
+                    console.log(aface)
+
+                    const faceHistID = await FormIt.GroupEdit.GetEditingHistoryID()
+
+                    await WSM.APIDragFace(faceHistID, aface, heightInternal )                       
+                          
                     // Create extrusions
-                    //return  WSM.APICreateExtrusion(historyID, await points, heightInternal)  
+                   // return  WSM.APICreateExtrusion(historyID,  await points, heightInternal)  
+
+                   console.log(aface)
                 }
                 catch (e) {
                     throw 'Failed to create extrusion'
                 }
             }))
+
+
         }))
 
         logMessage(`Created ${(await geometryFormIt).length} features`)
     }
+
+    const jointPoints = async(points, historyID)=>
+    {
+        const groupID = await WSM.APICreateGroup(historyID,[])
+        //logMessage('1. create new group')
+         
+        const groupHistoryID = await WSM.APIGetGroupReferencedHistoryReadOnly(historyID,groupID)
+
+        for(let i=0;i<points.length;i++)
+        {           
+
+            let j=(i+1+points.length)%points.length
+
+            await WSM.APIConnectPoint3ds(groupHistoryID, await points[i], await points[j])
+        }    
+    }
+
+
 
     /**
      * Convert a length in meters to the FormIt internal units
@@ -259,19 +295,106 @@
      */
     const miscFunction = async()=>
     {
-        const posCenter = await WSM.Geom.Point3d(0,0,0)
-        const histID = await FormIt.GroupEdit.GetEditingHistoryID()
+    //     const posCenter = await WSM.Geom.Point3d(0,0,0)
+    //     const histID = await FormIt.GroupEdit.GetEditingHistoryID()
+
+    //    let groupID = await WSM.APICreateGroup(histID,[])
+    //    logMessage('create new group'+': '+histID)
+
+    //    let groupHistoryID = await WSM.APIGetGroupReferencedHistoryReadOnly(histID,groupID)
+    //    logMessage('create new group history'+': '+groupHistoryID)
+
+    //    WSM.APICreateCylinder(groupHistoryID,posCenter,10,3)
+
+    //    WSM.APICreateCylinder(histID,await WSM.Geom.Point3d(4,4,0),10,3)
 
 
-       let groupID = await WSM.APICreateGroup(histID,[])
-       logMessage('create new group')
+  
+    //Draw polylines
 
-       let groupHistoryID = await WSM.APIGetGroupReferencedHistoryReadOnly(histID,groupID)
-       logMessage('create new group history')
+    const histID = await FormIt.GroupEdit.GetEditingHistoryID()
 
-       WSM.APICreateCylinder(groupHistoryID,posCenter,10,3)
+    const ptsForPolyline=[]
+
+    for(let i=0;i<10;i++)
+    {
+        const pt = await WSM.Geom.Point3d(i*100,i*20,0)
+        console.log(pt)
+
+        ptsForPolyline.push(pt)
+    }
+
+    for(let i=0;i<10;i++)
+    {
+        const pt = await WSM.Geom.Point3d(0,i*50,0)
+        console.log(pt)
+
+        ptsForPolyline.push(pt)
+    }
+
+    ptsForPolyline.push(await WSM.Geom.Point3d(0,450,0))
+    ptsForPolyline.push(await WSM.Geom.Point3d(900,180,0))
+
+    for(let i=0;i<ptsForPolyline.length;i++)
+    {
+        let j=(i+1+ptsForPolyline.length)%ptsForPolyline.length
+
+        await WSM.APIConnectPoint3ds(histID,  ptsForPolyline[i],  ptsForPolyline[j])
+
+    }
+
+    //const pl =  await WSM.APICreatePolyline(histID, await ptsForPolyline, false)
+
+    const pl2pt=[]
+
+    const pt1 = await WSM.Geom.Point3d(100,200,0)
+    const pt2 = await WSM.Geom.Point3d(300,300,0)
+    const pt3 = await WSM.Geom.Point3d(200,100,0)  
+
+    pl2pt.push( pt1)
+    pl2pt.push( pt2)
+    pl2pt.push( pt3)
+    pl2pt.push( pt1)
+    
+    const line2histID = await FormIt.GroupEdit.GetEditingHistoryID()
+
+    //const pl2 =  await WSM.APICreatePolyline(line2histID, await pl2pt, false)
 
 
+    for(let i=0;i<pl2pt.length;i++)
+    {
+        let j=(i+1+pl2pt.length)%pl2pt.length
+
+        await WSM.APIConnectPoint3ds(line2histID,  pl2pt[i],  pl2pt[j])
+    }
+    
+    // // console.log(WSM.APIGetGroupReferencedHistoryReadOnly(hist,obj,WSM.nObjectType.nFaceType,true))
+
+    // // const hist =  FormIt.Selection.GetSelections()[0].ids[0].History;
+    // // console.log(hist)
+
+    // // const object = FormIt.Selection.GetSelections()[0].ids[0].Object;
+    // // console.log(object)
+    // //console.log(WSM.APIGetObjectsByTypeReadOnly(hisotry, object, WSM.nObjectType.nFaceType, true));
+
+    // const  faces = console.log(await WSM.APIGetAllObjectsByTypeReadOnly(0, 6, WSM.nObjectType.nFaceType,true));
+    // console.log(faces[0])
+
+    // const edges= await WSM.APIGetAllObjectsByTypeReadOnly(0, WSM.nObjectType.nEdgeType);
+    // const anEdge = edges[0];
+
+    // console.log(edges)
+
+    const faces= await WSM.APIGetAllObjectsByTypeReadOnly(0, WSM.nObjectType.nFaceType);
+    const aface = faces[0];
+
+    console.log(aface)
+
+    const faceHistID = await FormIt.GroupEdit.GetEditingHistoryID()
+    
+    const extrudeFace =  WSM.APIDragFace(faceHistID,aface, -500 )
+    
+    // await WSM.APICreateExtrusion(faceHistID,await newpts,1000)
 
     }
 
