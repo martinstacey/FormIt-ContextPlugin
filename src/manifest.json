@@ -1,0 +1,7 @@
+{
+    "PluginName": "3D Context",
+    "PluginDescription": "3D context plugin for FormIt",
+    "PluginType": "Panel",
+    "Panel": "PLUGINLOCATION/plugin.html",
+    "PanelIcon": "PLUGINLOCATION/plugin.png"
+}
